@@ -22,37 +22,55 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 # ---------- CONTINUOUS SCORING LOGIC (with rounding added) ----------
+
 def assign_risk_continuous(user_lat, user_lon, geofences):
+    """
+    Calculates a continuous safety score from 1-100 for a given point.
+    A lower score means higher risk (e.g., 0 is most risky, 100 is safest).
+    """
     potential_scores = []
+
     for fence in geofences:
         if fence.get("type") == "circle":
             center_lat, center_lon = fence["coords"]
             radius = fence["radiusKm"]
             risk_label = fence.get("riskLevel")
             min_score, max_score = RISK_RANGES.get(risk_label, (91, 100))
+            
             dist = haversine_distance(user_lat, user_lon, center_lat, center_lon)
 
             if dist <= radius:
+                # --- THIS IS THE CORRECTED LOGIC ---
+                # At the center (dist=0), the score is min_score (e.g., 0 for "Very High").
+                # As distance increases towards the edge (dist=radius), the score linearly increases to max_score.
+                # The fraction of the distance covered is (dist / radius).
                 score_range = max_score - min_score
                 score = min_score + (dist / radius) * score_range
                 potential_scores.append(score)
+
             elif dist <= radius + SAFE_TRANSITION_KM:
+                # --- THIS IS THE CORRECTED LOGIC FOR THE TRANSITION ZONE ---
+                # At the geofence edge (dist=radius), the score is max_score.
+                # As distance increases towards the end of the transition zone, the score increases to 100.
                 dist_from_edge = dist - radius
                 score_range = 100 - max_score
                 score = max_score + (dist_from_edge / SAFE_TRANSITION_KM) * score_range
                 potential_scores.append(score)
 
     if not potential_scores:
+        # Point is far from all geofences, so it is 100% safe.
         return "Safe", 100.0
 
+    # If the point is affected by multiple zones, take the one with the HIGHEST RISK (lowest score).
     min_final_score = min(potential_scores)
+
+    # Determine the label from the final score.
     final_label = "Safe"
     for label, (min_s, max_s) in RISK_RANGES.items():
         if min_s <= round(min_final_score) <= max_s:
             final_label = label
             break
 
-    # === THIS IS THE ONLY LINE THAT CHANGED ===
     # Round the final score to 2 decimal places for cleanliness.
     return final_label, round(min_final_score, 2)
 
