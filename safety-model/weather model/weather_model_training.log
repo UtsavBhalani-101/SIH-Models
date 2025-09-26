@@ -261,3 +261,306 @@ Traceback (most recent call last):
 xgboost.core.XGBoostError: [00:09:18] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
 
 2025-09-14 00:09:18,876 - INFO - Falling back to CPU XGBoost (hist/cpu_predictor)
+2025-09-17 19:21:56,181 - INFO - Starting Weather Safety Model Training with Kaggle Dataset...
+2025-09-17 19:21:56,183 - INFO - Loading dataset from: weatherHistory.csv
+2025-09-17 19:21:56,583 - INFO - Loaded dataset with shape: (96453, 12)
+2025-09-17 19:21:56,583 - INFO - Original columns: ['Formatted Date', 'Summary', 'Precip Type', 'Temperature (C)', 'Apparent Temperature (C)', 'Humidity', 'Wind Speed (km/h)', 'Wind Bearing (degrees)', 'Visibility (km)', 'Loud Cover', 'Pressure (millibars)', 'Daily Summary']
+2025-09-17 19:21:56,605 - INFO - Standardized columns: ['formatted_date', 'summary', 'precip_type', 'temperature', 'apparent_temperature', 'humidity', 'wind_speed', 'wind_bearing', 'visibility', 'cloud_cover', 'pressure', 'daily_summary']
+2025-09-17 19:21:56,658 - INFO - Dataset info:
+None
+2025-09-17 19:21:56,659 - INFO - Preprocessing the dataset...
+2025-09-17 19:22:02,344 - WARNING - Error processing date column: Can only use .dt accessor with datetimelike values
+2025-09-17 19:22:02,381 - INFO - Precipitation types found: ['rain' 'snow' 'none']
+2025-09-17 19:22:04,097 - INFO - Preprocessed dataset shape: (96453, 29)
+2025-09-17 19:22:04,097 - INFO - Data preprocessing completed successfully
+2025-09-17 19:22:04,098 - INFO - Creating safety labels based on weather conditions...
+2025-09-17 19:22:11,631 - INFO - Safety labels created successfully
+2025-09-17 19:22:11,645 - INFO - Label distribution:
+safety_category
+Safe              43270
+Very High Risk    23297
+Moderate Risk     17672
+High Risk         12001
+Very Safe           213
+Name: count, dtype: int64
+2025-09-17 19:22:11,651 - INFO - Safety score statistics:
+count    96453.000000
+mean         2.154469
+std          1.234574
+min          0.000000
+25%          1.000000
+50%          2.000000
+75%          3.000000
+max          4.000000
+Name: safety_score, dtype: float64
+2025-09-17 19:22:11,651 - INFO - Preparing features for training...
+2025-09-17 19:22:11,719 - INFO - Selected features: ['temperature', 'apparent_temperature', 'humidity', 'wind_speed', 'wind_bearing', 'visibility', 'cloud_cover', 'pressure', 'precip_rain', 'precip_snow', 'summary_clear', 'summary_rain', 'summary_snow', 'summary_cloudy', 'summary_fog', 'summary_wind', 'daily_summary_clear', 'daily_summary_rain', 'daily_summary_snow', 'daily_summary_cloudy', 'daily_summary_fog', 'daily_summary_wind', 'temp_difference', 'heat_index', 'wind_chill']
+2025-09-17 19:22:12,137 - INFO - Final features prepared. Shape: (96453, 28)
+2025-09-17 19:22:12,143 - INFO - Target distribution: safety_score
+0      213
+1    43270
+2    17672
+3    12001
+4    23297
+Name: count, dtype: int64
+2025-09-17 19:22:12,149 - INFO - Starting model training...
+2025-09-17 19:22:12,271 - INFO - Training set size: 77162
+2025-09-17 19:22:12,271 - INFO - Test set size: 19291
+2025-09-17 19:22:12,376 - INFO - nvidia-smi not found on PATH; GPU may not be available or drivers not in PATH
+2025-09-17 19:22:12,376 - INFO - Attempting hyperparameter tuning with XGBoost (GPU)...
+2025-09-17 19:22:27,453 - WARNING - GPU training failed with error: 
+All the 144 fits failed.
+It is very likely that your model is misconfigured.
+You can try to debug the error by setting error_score='raise'.
+
+Below are more details about the failures:
+--------------------------------------------------------------------------------
+12 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:19] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+12 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:20] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+23 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:21] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+17 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:22] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+20 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:23] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+19 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:24] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+18 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:25] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+17 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:26] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+--------------------------------------------------------------------------------
+6 fits failed with the following error:
+Traceback (most recent call last):
+  File "D:\models\.venv\Lib\site-packages\sklearn\model_selection\_validation.py", line 859, in _fit_and_score
+    estimator.fit(X_train, y_train, **fit_params)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\sklearn.py", line 1683, in fit
+    self._Booster = train(
+                    ^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 729, in inner_f
+    return func(**kwargs)
+           ^^^^^^^^^^^^^^
+  File "D:\models\.venv\Lib\site-packages\xgboost\training.py", line 183, in train
+    bst.update(dtrain, iteration=i, fobj=obj)
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 2246, in update
+    _check_call(
+  File "D:\models\.venv\Lib\site-packages\xgboost\core.py", line 310, in _check_call
+    raise XGBoostError(py_str(_LIB.XGBGetLastError()))
+xgboost.core.XGBoostError: [19:22:27] C:\actions-runner\_work\xgboost\xgboost\src\tree\updater_gpu_hist.cu:847: Check failed: ctx_->Ordinal() >= 0 (-1 vs. 0) : Must have at least one device
+
+2025-09-17 19:22:27,459 - INFO - Falling back to CPU XGBoost (hist/cpu_predictor)
+2025-09-17 19:32:28,850 - INFO - Best CPU parameters: {'colsample_bytree': 1.0, 'learning_rate': 0.1, 'max_depth': 15, 'n_estimators': 300, 'subsample': 0.7}
+2025-09-17 19:32:28,858 - INFO - Best CPU cross-validation score: 0.9959
+2025-09-17 19:32:28,861 - INFO - Final XGBoost model tree_method=hist, predictor=cpu_predictor
+2025-09-17 19:32:29,447 - INFO - Test Accuracy: 0.9967
+2025-09-17 19:32:29,490 - INFO - Classification Report:
+              precision    recall  f1-score   support
+
+           0       1.00      0.98      0.99        43
+           1       1.00      1.00      1.00      8654
+           2       0.99      0.99      0.99      3534
+           3       0.99      0.99      0.99      2400
+           4       1.00      1.00      1.00      4660
+
+    accuracy                           1.00     19291
+   macro avg       1.00      0.99      0.99     19291
+weighted avg       1.00      1.00      1.00     19291
+
+2025-09-17 19:32:29,503 - INFO - Confusion Matrix:
+[[  42    1    0    0    0]
+ [   0 8645    9    0    0]
+ [   0    6 3513   15    0]
+ [   0    1   13 2378    8]
+ [   0    0    0   11 4649]]
+2025-09-17 19:32:29,608 - INFO - Top 15 Feature Importances:
+                      feature  importance
+20          daily_summary_fog    0.326909
+9                 precip_snow    0.285857
+0                 temperature    0.070701
+21         daily_summary_wind    0.068424
+2                    humidity    0.055970
+19       daily_summary_cloudy    0.048331
+14                summary_fog    0.035682
+8                 precip_rain    0.027083
+5                  visibility    0.012155
+23                 heat_index    0.008931
+27         pressure_deviation    0.008671
+25  temp_humidity_interaction    0.008264
+24                 wind_chill    0.007721
+15               summary_wind    0.006612
+17         daily_summary_rain    0.006125
+2025-09-17 19:32:29,608 - INFO - Very Safe accuracy: 0.9767
+2025-09-17 19:32:29,618 - INFO - Safe accuracy: 0.9990
+2025-09-17 19:32:29,618 - INFO - Moderate Risk accuracy: 0.9941
+2025-09-17 19:32:29,623 - INFO - High Risk accuracy: 0.9908
+2025-09-17 19:32:29,629 - INFO - Very High Risk accuracy: 0.9976
+2025-09-17 19:32:29,746 - INFO - Model and preprocessing objects saved to weather_safety_model_kaggle.pkl
+2025-09-17 19:32:29,781 - INFO - Feature importance saved to 'feature_importance.csv'
+2025-09-17 19:32:29,797 - WARNING - Missing features: ['precip_rain', 'precip_snow', 'summary_snow', 'summary_cloudy', 'summary_fog', 'summary_wind', 'daily_summary_rain', 'daily_summary_snow', 'daily_summary_cloudy', 'daily_summary_fog', 'daily_summary_wind', 'temp_difference', 'heat_index', 'wind_chill']
+2025-09-17 19:32:29,826 - INFO - Sample prediction: {'safety_score': 0, 'safety_category': 'Very Safe', 'confidence': 0.8379157781600952, 'probabilities': {'Very Safe': 0.8379157781600952, 'Safe': 0.11811298131942749, 'Moderate Risk': 0.01513203140348196, 'High Risk': 0.028455592691898346, 'Very High Risk': 0.00038364186184480786}}
+2025-09-17 19:32:29,826 - INFO - Weather Safety Model training completed successfully!
+2025-09-17 19:32:29,826 - INFO - Final model accuracy: 0.9967
