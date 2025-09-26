@@ -1,51 +1,47 @@
-# training.py (Version 2.3 - Improved and Compatible)
+# training.py (Regression Version - Dynamic Safety Scores)
 
 import pandas as pd
 import numpy as np
-import requests
 import logging
 import joblib
-import shutil
-import os
-import re
 import warnings
-from datetime import datetime, timedelta
+import os
+from datetime import datetime
 from scipy.stats import randint, uniform
 
 from feature_engineering import prepare_features
 
-from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.impute import SimpleImputer
-from xgboost import XGBClassifier
+from xgboost import XGBRegressor  # Changed from XGBClassifier to XGBRegressor
 
 warnings.filterwarnings('ignore')
 
 TRAINING_CONFIG = {
     "dataset_path": "weatherHistory.csv",
-    "model_output_path": "weather_safety_model_kaggle.pkl",
+    "model_output_path": "weather_safety_model_regression.pkl",
     "test_size": 0.2,
     "random_state": 42,
-    "stratify": True,
     "param_distributions": {
-        'n_estimators': randint(200, 500),
-        'max_depth': randint(6, 15),
+        'n_estimators': randint(100, 300),
+        'max_depth': randint(6, 12),
         'learning_rate': uniform(0.01, 0.15),
         'subsample': [0.8, 0.9, 1.0],
         'colsample_bytree': [0.8, 0.9, 1.0],
         'reg_alpha': uniform(0, 1),
         'reg_lambda': uniform(1, 2)
     },
-    "random_search_iterations": 50,
-    "cv_folds": 5
+    "random_search_iterations": 20,
+    "cv_folds": 3
 }
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('weather_model_training.log', mode='w'),
+        logging.FileHandler('weather_model_training_regression.log', mode='w'),
         logging.StreamHandler()
     ]
 )
@@ -57,7 +53,7 @@ def safe_numeric_conversion(series, default_value=0):
     numeric_series = numeric_series.replace([np.inf, -np.inf], np.nan)
     return numeric_series.fillna(default_value)
 
-class WeatherSafetyModel:
+class WeatherSafetyRegressionModel:
     def __init__(self):
         self.model = None
         self.scaler = StandardScaler()
@@ -82,8 +78,8 @@ class WeatherSafetyModel:
                 'Wind Speed (km/h)': 'wind_speed', 
                 'Wind Bearing (degrees)': 'wind_bearing',
                 'Visibility (km)': 'visibility', 
-                'Loud Cover': 'cloud_cover',  # Note: This is likely a typo in the original dataset
-                'Cloud Cover': 'cloud_cover',  # Handle both possible names
+                'Loud Cover': 'cloud_cover',
+                'Cloud Cover': 'cloud_cover',
                 'Pressure (millibars)': 'pressure', 
                 'Daily Summary': 'daily_summary'
             }
@@ -92,9 +88,7 @@ class WeatherSafetyModel:
             existing_mappings = {k: v for k, v in column_mapping.items() if k in df.columns}
             df = df.rename(columns=existing_mappings)
             
-            # Log available columns
             logger.info(f"Available columns: {list(df.columns)}")
-            
             return df
             
         except FileNotFoundError:
@@ -105,7 +99,7 @@ class WeatherSafetyModel:
             return None
 
     def preprocess_dataset(self, df):
-        """Preprocess the dataset with improved error handling and data validation."""
+        """Preprocess the dataset with improved error handling."""
         logger.info("Preprocessing the dataset...")
         processed_df = df.copy()
         
@@ -136,21 +130,20 @@ class WeatherSafetyModel:
             processed_df['precip_snow'] = (processed_df['precip_type'].isin(['snow', 'sleet'])).astype(int)
             logger.info("Precipitation type features created")
         
-        # Handle weather summary with more robust processing
+        # Handle weather summary
         if 'summary' in processed_df.columns:
-            # Get top weather summaries
+            import re
             top_summaries = processed_df['summary'].value_counts().nlargest(15).index
             logger.info(f"Top weather summaries: {list(top_summaries)}")
             
             for summary_type in top_summaries:
-                # Clean summary names for column names
                 clean_name = re.sub(r'[^a-zA-Z0-9]+', '_', str(summary_type).lower().strip())
                 clean_name = f'summary_{clean_name}'
                 processed_df[clean_name] = (processed_df['summary'] == summary_type).astype(int)
             
             logger.info(f"Created {len(top_summaries)} summary indicator features")
         
-        # Ensure numeric columns are properly converted and handle outliers
+        # Ensure numeric columns are properly converted
         numeric_columns = ['temperature', 'apparent_temperature', 'humidity', 'wind_speed', 
                           'wind_bearing', 'visibility', 'cloud_cover', 'pressure']
         
@@ -166,99 +159,161 @@ class WeatherSafetyModel:
                 elif col == 'cloud_cover':
                     processed_df[col] = processed_df[col].clip(0, 1)
                 elif col == 'visibility':
-                    processed_df[col] = processed_df[col].clip(0, None)  # Can't be negative
+                    processed_df[col] = processed_df[col].clip(0, None)
         
         # Handle missing cloud_cover values
         if 'cloud_cover' in processed_df.columns:
-            processed_df['cloud_cover'] = processed_df['cloud_cover'].fillna(0.5)  # Assume moderate coverage
+            processed_df['cloud_cover'] = processed_df['cloud_cover'].fillna(0.5)
         
         logger.info("Data preprocessing completed successfully.")
-        logger.info(f"Final preprocessed shape: {processed_df.shape}")
-        
         return processed_df
 
-    def create_safety_labels(self, df):
-        """Create safety labels with improved scoring logic."""
-        logger.info("Creating safety labels based on weather conditions...")
+    def create_continuous_safety_scores(self, df):
+        """Create continuous safety scores (0-100) instead of discrete categories."""
+        logger.info("Creating continuous safety scores based on weather conditions...")
         
-        def calculate_safety_score(row):
-            score = 0
+        def calculate_continuous_safety_score(row):
+            # Start with perfect safety (100)
+            safety_score = 100.0
             
-            # Temperature risks
+            # Temperature penalties (more granular)
             temp = row.get('temperature', 20)
-            if temp < -20 or temp > 45:
-                score += 3
-            elif temp < -10 or temp > 35:
-                score += 2
-            elif temp < 0 or temp > 30:
-                score += 1
+            if temp < -25:
+                safety_score -= 40
+            elif temp < -20:
+                safety_score -= 35
+            elif temp < -15:
+                safety_score -= 30
+            elif temp < -10:
+                safety_score -= 25
+            elif temp < -5:
+                safety_score -= 20
+            elif temp < 0:
+                safety_score -= 15
+            elif temp > 45:
+                safety_score -= 40
+            elif temp > 40:
+                safety_score -= 35
+            elif temp > 35:
+                safety_score -= 25
+            elif temp > 32:
+                safety_score -= 15
+            elif temp > 30:
+                safety_score -= 10
             
-            # Wind speed risks
+            # Wind speed penalties (continuous scale)
             wind = row.get('wind_speed', 0)
-            if wind > 80:
-                score += 3
+            if wind > 100:
+                safety_score -= 35
+            elif wind > 80:
+                safety_score -= 30
+            elif wind > 70:
+                safety_score -= 25
             elif wind > 60:
-                score += 2
+                safety_score -= 20
+            elif wind > 50:
+                safety_score -= 15
             elif wind > 40:
-                score += 1
+                safety_score -= 10
+            elif wind > 30:
+                safety_score -= 5
             
-            # Visibility risks
+            # Visibility penalties (gradual)
             vis = row.get('visibility', 10)
-            if vis < 0.5:
-                score += 3
+            if vis < 0.1:
+                safety_score -= 30
+            elif vis < 0.5:
+                safety_score -= 25
             elif vis < 1:
-                score += 2
+                safety_score -= 20
+            elif vis < 2:
+                safety_score -= 15
             elif vis < 3:
-                score += 1
+                safety_score -= 10
+            elif vis < 5:
+                safety_score -= 5
             
-            # Apparent temperature (feels like)
+            # Apparent temperature (feels like) penalties
             app_temp = row.get('apparent_temperature', temp)
-            if app_temp < -25 or app_temp > 50:
-                score += 2
-            elif app_temp < -15 or app_temp > 40:
-                score += 1
+            temp_diff = abs(app_temp - temp)
+            if temp_diff > 15:
+                safety_score -= 20
+            elif temp_diff > 10:
+                safety_score -= 15
+            elif temp_diff > 5:
+                safety_score -= 10
             
-            # Humidity extremes
+            if app_temp < -30:
+                safety_score -= 25
+            elif app_temp > 50:
+                safety_score -= 25
+            elif app_temp < -20:
+                safety_score -= 15
+            elif app_temp > 45:
+                safety_score -= 15
+            
+            # Humidity penalties
             humidity = row.get('humidity', 0.5)
-            if humidity > 0.95 or humidity < 0.1:
-                score += 1
+            if humidity > 0.95:
+                safety_score -= 10
+            elif humidity < 0.1:
+                safety_score -= 15
+            elif humidity > 0.9:
+                safety_score -= 5
+            elif humidity < 0.2:
+                safety_score -= 8
             
-            # Pressure extremes
+            # Pressure penalties
             pressure = row.get('pressure', 1013)
-            if pressure < 980 or pressure > 1040:
-                score += 1
+            pressure_deviation = abs(pressure - 1013.25)
+            if pressure_deviation > 50:
+                safety_score -= 15
+            elif pressure_deviation > 30:
+                safety_score -= 10
+            elif pressure_deviation > 20:
+                safety_score -= 5
             
-            # Precipitation risks
+            # Precipitation penalties
             if row.get('precip_snow', 0) == 1:
-                score += 2
+                safety_score -= 20
             elif row.get('precip_rain', 0) == 1:
-                score += 1
+                safety_score -= 10
             
-            return min(score, 4)  # Cap at 4 (Very High Risk)
+            # Cloud cover penalties (minor)
+            cloud_cover = row.get('cloud_cover', 0.5)
+            if cloud_cover > 0.9:
+                safety_score -= 5
+            
+            # Add some randomness for more realistic continuous scores
+            # This helps the model learn more nuanced patterns
+            noise = np.random.normal(0, 2)  # Small random variation
+            safety_score += noise
+            
+            # Ensure score stays within 0-100 range
+            return max(0.0, min(100.0, safety_score))
         
-        df['safety_score'] = df.apply(calculate_safety_score, axis=1)
+        df['continuous_safety_score'] = df.apply(calculate_continuous_safety_score, axis=1)
         
-        # Add safety category labels
-        safety_categories = {
-            0: "Very Safe",
-            1: "Safe", 
-            2: "Moderate Risk",
-            3: "High Risk",
-            4: "Very High Risk"
-        }
-        df['safety_category'] = df['safety_score'].map(safety_categories)
+        # Also create discrete categories for reference
+        df['safety_category'] = pd.cut(
+            df['continuous_safety_score'],
+            bins=[0, 20, 40, 60, 80, 100],
+            labels=['Very High Risk', 'High Risk', 'Moderate Risk', 'Safe', 'Very Safe'],
+            include_lowest=True
+        )
         
         # Log distribution of safety scores
-        score_distribution = df['safety_score'].value_counts().sort_index()
-        logger.info("Safety score distribution:")
-        for score, count in score_distribution.items():
-            logger.info(f"  {score} ({safety_categories[score]}): {count} samples")
+        logger.info("Continuous Safety Score Statistics:")
+        logger.info(f"Mean: {df['continuous_safety_score'].mean():.2f}")
+        logger.info(f"Std: {df['continuous_safety_score'].std():.2f}")
+        logger.info(f"Min: {df['continuous_safety_score'].min():.2f}")
+        logger.info(f"Max: {df['continuous_safety_score'].max():.2f}")
         
         return df
     
     def prepare_features(self, df):
-        """Prepare features for model training with enhanced validation."""
-        logger.info("Preparing features for model training...")
+        """Prepare features for regression model training."""
+        logger.info("Preparing features for regression model training...")
         
         # Apply feature engineering
         df_featured = prepare_features(df)
@@ -266,7 +321,7 @@ class WeatherSafetyModel:
         # Define columns to exclude from features
         exclude_cols = [
             'formatted_date', 'summary', 'daily_summary', 'precip_type', 
-            'safety_score', 'safety_category'
+            'continuous_safety_score', 'safety_category'
         ]
         
         # Select feature columns (numeric only)
@@ -294,23 +349,22 @@ class WeatherSafetyModel:
         # Store feature names for API compatibility
         self.feature_names = list(X_imputed.columns)
         
-        y = df_featured['safety_score']
+        y = df_featured['continuous_safety_score']  # Use continuous target
         
         logger.info(f"Final features prepared. Shape: {X_imputed.shape}")
-        logger.info(f"Target distribution: {y.value_counts().sort_index().to_dict()}")
+        logger.info(f"Target statistics: Mean={y.mean():.2f}, Std={y.std():.2f}")
         
         return X_imputed, y
 
     def train_model(self, X, y):
-        """Train the model with improved hyperparameter search and validation."""
-        logger.info("Starting model training with hyperparameter optimization...")
+        """Train the regression model."""
+        logger.info("Starting regression model training with hyperparameter optimization...")
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, 
             test_size=TRAINING_CONFIG["test_size"], 
-            random_state=TRAINING_CONFIG["random_state"], 
-            stratify=y
+            random_state=TRAINING_CONFIG["random_state"]
         )
         
         logger.info(f"Training set size: {X_train.shape[0]}")
@@ -320,16 +374,17 @@ class WeatherSafetyModel:
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
         
-        # Initialize XGBoost model
-        xgb_model = XGBClassifier(
-            use_label_encoder=False, 
-            eval_metric='mlogloss', 
+        # Initialize XGBoost regression model
+        # Use n_jobs=1 for better cleanup in containerized environments
+        n_jobs_setting = 1 if os.environ.get('MODAL_RUNTIME') else -1
+        xgb_model = XGBRegressor(
             random_state=TRAINING_CONFIG["random_state"],
-            n_jobs=-1
+            n_jobs=n_jobs_setting,
+            objective='reg:squarederror'  # For regression
         )
         
         # Setup cross-validation
-        cv = StratifiedKFold(
+        cv = KFold(
             n_splits=TRAINING_CONFIG["cv_folds"], 
             shuffle=True, 
             random_state=TRAINING_CONFIG["random_state"]
@@ -337,13 +392,15 @@ class WeatherSafetyModel:
         
         # Hyperparameter search
         logger.info("Performing hyperparameter optimization...")
+        # Use fewer parallel jobs in containerized environments for better cleanup
+        search_n_jobs = 1 if os.environ.get('MODAL_RUNTIME') else -1
         search = RandomizedSearchCV(
             xgb_model,
             TRAINING_CONFIG["param_distributions"],
             n_iter=TRAINING_CONFIG["random_search_iterations"],
             cv=cv,
-            scoring='f1_weighted',
-            n_jobs=-1,
+            scoring='neg_mean_squared_error',  # For regression
+            n_jobs=search_n_jobs,
             verbose=1,
             random_state=TRAINING_CONFIG["random_state"]
         )
@@ -354,19 +411,46 @@ class WeatherSafetyModel:
         self.model = search.best_estimator_
         
         logger.info(f"Best parameters: {search.best_params_}")
-        logger.info(f"Best cross-validation score: {search.best_score_:.4f}")
+        logger.info(f"Best cross-validation score: {-search.best_score_:.4f} (MSE)")
+        
+        # Perform additional cross-validation testing with the best model
+        from sklearn.model_selection import cross_val_score
+        logger.info("Performing cross-validation testing with best model...")
+        
+        # Test multiple scoring metrics
+        cv_scores_mse = cross_val_score(
+            self.model, X_train_scaled, y_train, 
+            cv=cv, scoring='neg_mean_squared_error', n_jobs=search_n_jobs
+        )
+        cv_scores_mae = cross_val_score(
+            self.model, X_train_scaled, y_train, 
+            cv=cv, scoring='neg_mean_absolute_error', n_jobs=search_n_jobs
+        )
+        cv_scores_r2 = cross_val_score(
+            self.model, X_train_scaled, y_train, 
+            cv=cv, scoring='r2', n_jobs=search_n_jobs
+        )
+        
+        # Log cross-validation results
+        logger.info("Cross-Validation Test Results:")
+        logger.info(f"  MSE: {-cv_scores_mse.mean():.4f} ± {cv_scores_mse.std():.4f}")
+        logger.info(f"  MAE: {-cv_scores_mae.mean():.4f} ± {cv_scores_mae.std():.4f}")
+        logger.info(f"  R²:  {cv_scores_r2.mean():.4f} ± {cv_scores_r2.std():.4f}")
+        logger.info(f"  Individual CV R² scores: {[f'{score:.4f}' for score in cv_scores_r2]}")
         
         # Final evaluation
         y_pred = self.model.predict(X_test_scaled)
         
-        # Calculate metrics
-        accuracy = accuracy_score(y_test, y_pred)
-        f1 = f1_score(y_test, y_pred, average='weighted')
+        # Calculate regression metrics
+        mse = mean_squared_error(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        rmse = np.sqrt(mse)
         
-        logger.info(f"Final Test Accuracy: {accuracy:.4f}")
-        logger.info(f"Final Test F1-Score: {f1:.4f}")
-        logger.info("\nDetailed Classification Report:")
-        logger.info(f"\n{classification_report(y_test, y_pred)}")
+        logger.info(f"Final Test Metrics:")
+        logger.info(f"  RMSE: {rmse:.4f}")
+        logger.info(f"  MAE: {mae:.4f}")
+        logger.info(f"  R²: {r2:.4f}")
         
         # Feature importance
         if hasattr(self.model, 'feature_importances_'):
@@ -378,7 +462,18 @@ class WeatherSafetyModel:
             logger.info("\nTop 10 Most Important Features:")
             logger.info(feature_importance.head(10).to_string(index=False))
         
-        return self.model, accuracy
+        # Prepare cross-validation results for return
+        cv_results = {
+            'mse_mean': float(-cv_scores_mse.mean()),
+            'mse_std': float(cv_scores_mse.std()),
+            'mae_mean': float(-cv_scores_mae.mean()),
+            'mae_std': float(cv_scores_mae.std()),
+            'r2_mean': float(cv_scores_r2.mean()),
+            'r2_std': float(cv_scores_r2.std()),
+            'r2_scores': cv_scores_r2.tolist()
+        }
+        
+        return self.model, r2, cv_results
 
     def save_model(self, filename: str):
         """Save model and all preprocessing objects."""
@@ -390,66 +485,48 @@ class WeatherSafetyModel:
             'scaler': self.scaler,
             'imputer': self.imputer,
             'feature_names': self.feature_names,
+            'model_type': 'regression',  # Important flag
             'timestamp': datetime.now().isoformat(),
             'config': TRAINING_CONFIG
         }
         
         joblib.dump(model_data, filename)
-        logger.info(f"Model and preprocessing objects saved to {filename}")
-        logger.info(f"Model file size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
-
-def validate_dataset(df):
-    """Validate dataset before training."""
-    logger.info("Validating dataset...")
-    
-    if df is None or df.empty:
-        logger.error("Dataset is empty or None")
-        return False
-    
-    required_columns = ['temperature', 'humidity', 'wind_speed', 'pressure']
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    
-    if missing_columns:
-        logger.error(f"Missing required columns: {missing_columns}")
-        return False
-    
-    logger.info("Dataset validation passed")
-    return True
+        logger.info(f"Regression model saved to {filename}")
 
 def main():
-    """Main training pipeline."""
+    """Main training pipeline for regression model."""
     logger.info("=" * 60)
-    logger.info("Starting Weather Safety Model Training Pipeline")
+    logger.info("Starting Weather Safety Regression Model Training Pipeline")
     logger.info("=" * 60)
     
     try:
         # Initialize model
-        weather_model = WeatherSafetyModel()
+        weather_model = WeatherSafetyRegressionModel()
         
         # Load dataset
         df = weather_model.load_kaggle_dataset(TRAINING_CONFIG["dataset_path"])
-        if not validate_dataset(df):
-            logger.error("Dataset validation failed. Exiting.")
+        if df is None:
+            logger.error("Failed to load dataset. Exiting.")
             return
         
         # Preprocess data
         df_processed = weather_model.preprocess_dataset(df)
         
-        # Create safety labels
-        df_labeled = weather_model.create_safety_labels(df_processed)
+        # Create continuous safety scores
+        df_labeled = weather_model.create_continuous_safety_scores(df_processed)
         
         # Prepare features
         X, y = weather_model.prepare_features(df_labeled)
         
         # Train model
-        model, accuracy = weather_model.train_model(X, y)
+        model, r2_score = weather_model.train_model(X, y)
         
         # Save model
         weather_model.save_model(TRAINING_CONFIG["model_output_path"])
         
         logger.info("=" * 60)
-        logger.info(f"Training Pipeline Completed Successfully!")
-        logger.info(f"Final Model Accuracy: {accuracy:.4f}")
+        logger.info(f"Regression Training Pipeline Completed Successfully!")
+        logger.info(f"Final Model R²: {r2_score:.4f}")
         logger.info(f"Model saved to: {TRAINING_CONFIG['model_output_path']}")
         logger.info("=" * 60)
         

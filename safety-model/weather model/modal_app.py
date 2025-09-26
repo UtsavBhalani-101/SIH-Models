@@ -23,6 +23,7 @@ image = (
                 "pandas",
                 "numpy",
                 "requests",
+                "httpx",  # Added for async HTTP requests
                 # Model runtime dependencies
                 "xgboost>=1.7.0",
                 "scikit-learn>=1.2",

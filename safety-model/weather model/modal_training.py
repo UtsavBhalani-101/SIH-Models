@@ -6,7 +6,6 @@ It has been migrated to Modal v1.1 APIs and includes all necessary dependencies.
 
 import modal
 from pathlib import Path
-import os
 import sys
 
 # Name of the Modal app
@@ -48,14 +47,30 @@ model_volume = modal.Volume.from_name("weather-safety-models", create_if_missing
     volumes={"/root/models": model_volume}
 )
 def train_weather_model():
+    import atexit
+    import signal
+    import os
+    import gc
+    
     # Adjust sys.path to import from the added project directory
     app_dir = Path("/root/app")
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
 
     # Import the training module
-    from training import WeatherSafetyModel
+    from training import WeatherSafetyRegressionModel
     import joblib
+
+    # Configure joblib to use fewer processes in Modal environment
+    os.environ['MODAL_RUNTIME'] = '1'  # Flag to indicate we're running in Modal
+    os.environ['JOBLIB_START_METHOD'] = 'spawn'
+    os.environ['OMP_NUM_THREADS'] = '1'
+
+    # Setup cleanup handler for joblib processes
+    def cleanup_processes():
+        gc.collect()
+        
+    atexit.register(cleanup_processes)
 
     print("Starting weather safety model training on Modal with GPU support...")
     print(f"GPU configured: T4")
@@ -65,7 +80,7 @@ def train_weather_model():
     os.chdir("/root/app")
 
     # Initialize the model
-    weather_model = WeatherSafetyModel()
+    weather_model = WeatherSafetyRegressionModel()
 
     # Load the dataset
     dataset_path = "weatherHistory.csv"
@@ -80,26 +95,47 @@ def train_weather_model():
     # Preprocess the dataset
     df_processed = weather_model.preprocess_dataset(df)
 
-    # Create safety labels
-    df_labeled = weather_model.create_safety_labels(df_processed)
+    # Create safety labels (using continuous scores for regression)
+    df_labeled = weather_model.create_continuous_safety_scores(df_processed)
 
     # Prepare features
     X, y = weather_model.prepare_features(df_labeled)
 
-    # Train model
-    model, accuracy, feature_importance = weather_model.train_model(X, y)
+    # Override training config for Modal environment to reduce parallel processing issues
+    import training
+    original_config = training.TRAINING_CONFIG.copy()
+    training.TRAINING_CONFIG['random_search_iterations'] = 10  # Reduce iterations
+    training.TRAINING_CONFIG['cv_folds'] = 2  # Reduce CV folds
+    
+    try:
+        # Train model
+        model, r2_score, cv_results = weather_model.train_model(X, y)
+    finally:
+        # Restore original config
+        training.TRAINING_CONFIG = original_config
 
     # Get the model data for return
     model_data = {
         'model': weather_model.model,
         'scaler': weather_model.scaler,
+        'imputer': weather_model.imputer,
         'feature_names': weather_model.feature_names,
-        'precip_encoder': weather_model.precip_encoder
+        'model_type': 'regression'
     }
 
-    # Save feature importance for analysis
-    feature_importance.to_csv('feature_importance.csv', index=False)
-    print("Feature importance saved to 'feature_importance.csv'")
+    # Get feature importance if available
+    feature_importance_dict = []
+    if hasattr(weather_model.model, 'feature_importances_'):
+        import pandas as pd
+        feature_importance_df = pd.DataFrame({
+            'feature': weather_model.feature_names,
+            'importance': weather_model.model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        # Save feature importance for analysis
+        feature_importance_df.to_csv('feature_importance.csv', index=False)
+        print("Feature importance saved to 'feature_importance.csv'")
+        feature_importance_dict = feature_importance_df.to_dict('records')
 
     # Save model to Modal volume for persistence
     model_volume_path = "/root/models/weather_safety_model_kaggle.pkl"
@@ -112,15 +148,34 @@ def train_weather_model():
     print(f"Model saved locally in container: {local_model_path}")
 
     print("Training completed successfully!")
-    print(f"Final model accuracy: {accuracy:.4f}")
+    print(f"Final model R² score: {r2_score:.4f}")
+    
+    # Print cross-validation results
+    print("\nCross-Validation Test Results:")
+    print(f"  MSE: {cv_results['mse_mean']:.4f} ± {cv_results['mse_std']:.4f}")
+    print(f"  MAE: {cv_results['mae_mean']:.4f} ± {cv_results['mae_std']:.4f}")
+    print(f"  R²:  {cv_results['r2_mean']:.4f} ± {cv_results['r2_std']:.4f}")
+
+    # Cleanup: Force garbage collection and process cleanup
+    import time
+    import threading
+    
+    # Force garbage collection
+    gc.collect()
+    
+    # Wait briefly for background threads to finish
+    time.sleep(0.5)
+    
+    print("Cleanup completed, returning results...")
 
     # Return the model data and metadata
     return {
         "status": "success",
-        "message": "Weather safety model trained successfully",
-        "accuracy": float(accuracy),
+        "message": "Weather safety regression model trained successfully",
+        "r2_score": float(r2_score),
+        "cv_results": cv_results,
         "model_data": model_data,
-        "feature_importance": feature_importance.to_dict('records'),
+        "feature_importance": feature_importance_dict,
         "model_volume_path": model_volume_path
     }
 
@@ -135,7 +190,16 @@ def run_training():
     result = train_weather_model.remote()
 
     if result["status"] == "success":
-        print(f"Training completed with accuracy: {result['accuracy']:.4f}")
+        print(f"Training completed with R² score: {result['r2_score']:.4f}")
+        
+        # Display cross-validation results
+        cv_results = result.get('cv_results', {})
+        if cv_results:
+            print("\nCross-Validation Test Results:")
+            print(f"  MSE: {cv_results['mse_mean']:.4f} ± {cv_results['mse_std']:.4f}")
+            print(f"  MAE: {cv_results['mae_mean']:.4f} ± {cv_results['mae_std']:.4f}")
+            print(f"  R²:  {cv_results['r2_mean']:.4f} ± {cv_results['r2_std']:.4f}")
+        
         print(f"Model also saved to Modal volume: {result.get('model_volume_path', 'N/A')}")
 
         # Save the trained model locally
@@ -143,11 +207,12 @@ def run_training():
         joblib.dump(result["model_data"], model_filename)
         print(f"Model saved locally as: {model_filename}")
 
-        # Save feature importance
-        import pandas as pd
-        feature_importance_df = pd.DataFrame(result["feature_importance"])
-        feature_importance_df.to_csv('feature_importance.csv', index=False)
-        print("Feature importance saved to 'feature_importance.csv'")
+        # Save feature importance if available
+        if result["feature_importance"]:
+            import pandas as pd
+            feature_importance_df = pd.DataFrame(result["feature_importance"])
+            feature_importance_df.to_csv('feature_importance.csv', index=False)
+            print("Feature importance saved to 'feature_importance.csv'")
 
         print("Model and artifacts successfully saved to local filesystem and Modal volume!")
     else:

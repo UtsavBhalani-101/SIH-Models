@@ -3,7 +3,7 @@
 import requests
 import json
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://of8766175--weather-safety-api-fastapi-app-dev.modal.run"
 
 def run_test(name, method, url, data=None):
     """Helper function to run a test and print results."""
